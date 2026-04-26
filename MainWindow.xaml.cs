@@ -14,6 +14,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Documents;
 using System.Net.Http;
 using System.Reflection;
+using Drawing = System.Drawing;
 using Forms = System.Windows.Forms;
 using SnapForge.Models;
 using SnapForge.Services;
@@ -61,37 +62,92 @@ public partial class MainWindow : Window
     private double _editorValue = 1;
     private OverlayHubWindow? _overlayHubWindow;
     private string? _latestReleaseUrl;
+    private string? _latestInstallerDownloadUrl;
     private bool _isCheckingUpdates;
+    private bool _isUpdatingInBackground;
+    private System.Windows.Threading.DispatcherTimer? _hotkeyRetryTimer;
+    private LowLevelKeyboardProc? _keyboardProc;
+    private IntPtr _keyboardHookHandle = IntPtr.Zero;
+    private bool _captureHotkeyPressed;
+    private bool _overlayHotkeyPressed;
 
     [DllImport("user32.dll")]
     private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
 
     [DllImport("user32.dll")]
     private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool UnhookWindowsHookEx(IntPtr hhk);
+    [DllImport("user32.dll")]
+    private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int vKey);
+    [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    private static extern IntPtr GetModuleHandle(string? lpModuleName);
+
+    private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KbdLlHookStruct
+    {
+        public uint vkCode;
+        public uint scanCode;
+        public uint flags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    private const int WhKeyboardLl = 13;
+    private const int WmKeyDown = 0x0100;
+    private const int WmSysKeyDown = 0x0104;
+    private const int WmKeyUp = 0x0101;
+    private const int WmSysKeyUp = 0x0105;
+    private const int VkShift = 0x10;
 
     public MainWindow()
     {
         _settings = _settingsService.Load();
         InitializeComponent();
+        TryApplyWindowIcon();
         _trayIcon = BuildTrayIcon();
         LoadSettingsIntoUI();
         GalleryItemsControl.ItemsSource = _galleryItems;
         RefreshGalleryItems();
+        SourceInitialized += MainWindow_SourceInitialized;
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
         StateChanged += MainWindow_StateChanged;
     }
 
+    private void MainWindow_SourceInitialized(object? sender, EventArgs e)
+    {
+        EnsureHotkeySettingsValid();
+        _hwndSource = (HwndSource?)PresentationSource.FromVisual(this);
+        if (_hwndSource is null)
+        {
+            IntPtr handle = new WindowInteropHelper(this).Handle;
+            if (handle != IntPtr.Zero)
+            {
+                _hwndSource = HwndSource.FromHwnd(handle);
+            }
+        }
+
+        if (_hwndSource is null)
+        {
+            HotkeyStatusText.Text = "Hotkey init failed (window handle).";
+            return;
+        }
+
+        _hwndSource.AddHook(WndProc);
+        TryRegisterAllHotkeysWithRetry();
+        InstallKeyboardHookFallback();
+    }
+
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         DockRightHalf();
-        _hwndSource = (HwndSource)PresentationSource.FromVisual(this)!;
-        _hwndSource.AddHook(WndProc);
-        TryRegisterAllHotkeys(out string? hotkeyError);
-        if (!string.IsNullOrWhiteSpace(hotkeyError))
-        {
-            HotkeyStatusText.Text = hotkeyError;
-        }
 
         if (_settings.StartWithWindows)
         {
@@ -127,15 +183,20 @@ public partial class MainWindow : Window
         EditorColorPreview.Background = new SolidColorBrush(_editorColor);
         ViewerZoomText.Text = "100%";
         CurrentVersionText.Text = $"Current version: {GetCurrentAppVersion()}";
+        UpdateProgressBar.Value = 0;
+        UpdateProgressText.Text = "Progress: 0%";
+        SetUpdateProgressVisible(false);
         UpdateEditorColorPlaneVisuals();
     }
 
     private Forms.NotifyIcon BuildTrayIcon()
     {
+        string trayIconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", "icons", "app.ico");
+        Drawing.Icon trayResolvedIcon = File.Exists(trayIconPath) ? new Drawing.Icon(trayIconPath) : Drawing.SystemIcons.Application;
         Forms.NotifyIcon tray = new()
         {
             Text = "SnapForge Capture",
-            Icon = System.Drawing.SystemIcons.Application,
+            Icon = trayResolvedIcon,
             Visible = true
         };
         Forms.ContextMenuStrip menu = new();
@@ -148,9 +209,27 @@ public partial class MainWindow : Window
         return tray;
     }
 
+    private void TryApplyWindowIcon()
+    {
+        try
+        {
+            string iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", "icons", "app.ico");
+            if (!File.Exists(iconPath))
+            {
+                return;
+            }
+
+            Icon = BitmapFrame.Create(new Uri(iconPath, UriKind.Absolute));
+        }
+        catch
+        {
+        }
+    }
+
     private void ShowFromTray()
     {
         Show();
+        TryRegisterAllHotkeysWithRetry();
         DockRightHalf();
         Activate();
     }
@@ -173,6 +252,7 @@ public partial class MainWindow : Window
     {
         if (_allowClose)
         {
+            UninstallKeyboardHookFallback();
             _trayIcon.Visible = false;
             _trayIcon.Dispose();
             if (_hwndSource is not null)
@@ -354,7 +434,17 @@ public partial class MainWindow : Window
         error = null;
         if (_hwndSource is null)
         {
-            return true;
+            IntPtr handle = new WindowInteropHelper(this).Handle;
+            if (handle != IntPtr.Zero)
+            {
+                _hwndSource = HwndSource.FromHwnd(handle);
+            }
+
+            if (_hwndSource is null)
+            {
+                error = "Hotkey registration failed (no window handle).";
+                return false;
+            }
         }
 
         UnregisterHotKey(_hwndSource.Handle, CaptureHotkeyId);
@@ -370,6 +460,156 @@ public partial class MainWindow : Window
         return true;
     }
 
+    private void TryRegisterAllHotkeysWithRetry()
+    {
+        bool ok = TryRegisterAllHotkeys(out string? error);
+        if (ok)
+        {
+            if (!string.IsNullOrWhiteSpace(HotkeyStatusText.Text) &&
+                HotkeyStatusText.Text.Contains("failed", StringComparison.OrdinalIgnoreCase))
+            {
+                HotkeyStatusText.Text = "Hotkeys active.";
+            }
+
+            if (_hotkeyRetryTimer is not null)
+            {
+                _hotkeyRetryTimer.Stop();
+                _hotkeyRetryTimer = null;
+            }
+            return;
+        }
+
+        HotkeyStatusText.Text = error ?? "Hotkey registration failed.";
+        if (_hotkeyRetryTimer is not null)
+        {
+            return;
+        }
+
+        _hotkeyRetryTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(2)
+        };
+        _hotkeyRetryTimer.Tick += (_, _) =>
+        {
+            if (TryRegisterAllHotkeys(out string? retryError))
+            {
+                HotkeyStatusText.Text = "Hotkeys active.";
+                _hotkeyRetryTimer?.Stop();
+                _hotkeyRetryTimer = null;
+            }
+            else if (!string.IsNullOrWhiteSpace(retryError))
+            {
+                HotkeyStatusText.Text = retryError;
+            }
+        };
+        _hotkeyRetryTimer.Start();
+    }
+
+    private void InstallKeyboardHookFallback()
+    {
+        if (_keyboardHookHandle != IntPtr.Zero)
+        {
+            return;
+        }
+
+        _keyboardProc = KeyboardHookProc;
+        string moduleName = Process.GetCurrentProcess().MainModule?.ModuleName ?? string.Empty;
+        IntPtr moduleHandle = GetModuleHandle(moduleName);
+        _keyboardHookHandle = SetWindowsHookEx(WhKeyboardLl, _keyboardProc, moduleHandle, 0);
+    }
+
+    private void UninstallKeyboardHookFallback()
+    {
+        if (_keyboardHookHandle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        _ = UnhookWindowsHookEx(_keyboardHookHandle);
+        _keyboardHookHandle = IntPtr.Zero;
+    }
+
+    private IntPtr KeyboardHookProc(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        if (nCode >= 0 && lParam != IntPtr.Zero)
+        {
+            KbdLlHookStruct data = Marshal.PtrToStructure<KbdLlHookStruct>(lParam);
+            int msg = wParam.ToInt32();
+            bool keyDown = msg == WmKeyDown || msg == WmSysKeyDown;
+            bool keyUp = msg == WmKeyUp || msg == WmSysKeyUp;
+            bool shiftHeld = (GetAsyncKeyState(VkShift) & 0x8000) != 0;
+
+            if (keyDown && shiftHeld)
+            {
+                int captureVk = _settings.HotkeyVirtualKey;
+                int overlayVk = _settings.OverlayHotkeyVirtualKey;
+                if ((int)data.vkCode == captureVk && !_captureHotkeyPressed)
+                {
+                    _captureHotkeyPressed = true;
+                    Dispatcher.BeginInvoke(() => CaptureScreenshot(), System.Windows.Threading.DispatcherPriority.Background);
+                }
+                else if ((int)data.vkCode == overlayVk && !_overlayHotkeyPressed)
+                {
+                    _overlayHotkeyPressed = true;
+                    Dispatcher.BeginInvoke(() => ShowOverlayHub(), System.Windows.Threading.DispatcherPriority.Background);
+                }
+            }
+            else if (keyUp)
+            {
+                if ((int)data.vkCode == _settings.HotkeyVirtualKey)
+                {
+                    _captureHotkeyPressed = false;
+                }
+
+                if ((int)data.vkCode == _settings.OverlayHotkeyVirtualKey)
+                {
+                    _overlayHotkeyPressed = false;
+                }
+            }
+        }
+
+        return CallNextHookEx(_keyboardHookHandle, nCode, wParam, lParam);
+    }
+
+    private void EnsureHotkeySettingsValid()
+    {
+        bool changed = false;
+        if (!HotkeyParser.TryParseCombination(_settings.HotkeyComboText, out int capMods, out int capVk, out string capNorm))
+        {
+            capNorm = "Shift+F11";
+            HotkeyParser.TryParseCombination(capNorm, out capMods, out capVk, out _);
+            changed = true;
+        }
+
+        if (!HotkeyParser.TryParseCombination(_settings.OverlayHotkeyComboText, out int ovMods, out int ovVk, out string ovNorm))
+        {
+            ovNorm = "Shift+F12";
+            HotkeyParser.TryParseCombination(ovNorm, out ovMods, out ovVk, out _);
+            changed = true;
+        }
+
+        if (_settings.HotkeyVirtualKey != capVk || _settings.HotkeyModifiers != capMods || !string.Equals(_settings.HotkeyComboText, capNorm, StringComparison.OrdinalIgnoreCase))
+        {
+            _settings.HotkeyVirtualKey = capVk;
+            _settings.HotkeyModifiers = capMods;
+            _settings.HotkeyComboText = capNorm;
+            changed = true;
+        }
+
+        if (_settings.OverlayHotkeyVirtualKey != ovVk || _settings.OverlayHotkeyModifiers != ovMods || !string.Equals(_settings.OverlayHotkeyComboText, ovNorm, StringComparison.OrdinalIgnoreCase))
+        {
+            _settings.OverlayHotkeyVirtualKey = ovVk;
+            _settings.OverlayHotkeyModifiers = ovMods;
+            _settings.OverlayHotkeyComboText = ovNorm;
+            changed = true;
+        }
+
+        if (changed)
+        {
+            _settingsService.Save(_settings);
+        }
+    }
+
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         const int wmHotkey = 0x0312;
@@ -380,7 +620,7 @@ public partial class MainWindow : Window
         }
         else if (msg == wmHotkey && wParam.ToInt32() == OverlayHotkeyId)
         {
-            ShowOverlayHub();
+            Dispatcher.BeginInvoke(() => ShowOverlayHub(), System.Windows.Threading.DispatcherPriority.Normal);
             handled = true;
         }
 
@@ -521,7 +761,12 @@ public partial class MainWindow : Window
         }
 
         SetSelectedImage(filePath);
-        CaptureResultText.Text = $"Send selected: {Path.GetFileName(filePath)}";
+        SendWindow sendWindow = new(filePath)
+        {
+            Owner = this
+        };
+        sendWindow.Show();
+        CaptureResultText.Text = $"Send opened: {Path.GetFileName(filePath)}";
     }
 
     private void OpenCaptureFolderButton_Click(object sender, RoutedEventArgs e)
@@ -1424,7 +1669,7 @@ public partial class MainWindow : Window
 
     private async Task CheckUpdatesAsync(bool isManual)
     {
-        if (_isCheckingUpdates)
+        if (_isCheckingUpdates || _isUpdatingInBackground)
         {
             return;
         }
@@ -1439,7 +1684,9 @@ public partial class MainWindow : Window
         }
 
         _isCheckingUpdates = true;
+        _latestInstallerDownloadUrl = null;
         OpenUpdateButton.Visibility = Visibility.Collapsed;
+        SetUpdateProgressVisible(false);
         if (isManual)
         {
             UpdateStatusText.Text = "Checking for updates...";
@@ -1447,7 +1694,10 @@ public partial class MainWindow : Window
 
         try
         {
-            _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("SnapForgeUpdateChecker/1.0");
+            if (_httpClient.DefaultRequestHeaders.UserAgent.Count == 0)
+            {
+                _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("SnapForgeUpdateChecker/1.0");
+            }
             string url = $"https://api.github.com/repos/{UpdateRepoOwner}/{UpdateRepoName}/releases/latest";
             string json = await _httpClient.GetStringAsync(url);
 
@@ -1457,6 +1707,7 @@ public partial class MainWindow : Window
             string latestTag = root.TryGetProperty("tag_name", out JsonElement tagEl) ? tagEl.GetString() ?? string.Empty : string.Empty;
             string latestUrl = root.TryGetProperty("html_url", out JsonElement pageEl) ? pageEl.GetString() ?? string.Empty : string.Empty;
             _latestReleaseUrl = latestUrl;
+            _latestInstallerDownloadUrl = TryGetInstallerDownloadUrl(root);
 
             string current = GetCurrentAppVersion();
             string currentNorm = NormalizeVersionText(current);
@@ -1465,12 +1716,22 @@ public partial class MainWindow : Window
 
             if (IsVersionNewer(latestNorm, currentNorm))
             {
-                UpdateStatusText.Text = "New version available.";
+                UpdateStatusText.Text = "New version found. Updating now...";
                 OpenUpdateButton.Visibility = string.IsNullOrWhiteSpace(_latestReleaseUrl) ? Visibility.Collapsed : Visibility.Visible;
+                if (!string.IsNullOrWhiteSpace(_latestInstallerDownloadUrl))
+                {
+                    await DownloadAndInstallUpdateAsync(_latestInstallerDownloadUrl);
+                }
+                else
+                {
+                    UpdateStatusText.Text = "Installer asset not found in release. Use 'Open update download'.";
+                    SetUpdateProgressVisible(false);
+                }
             }
             else
             {
                 UpdateStatusText.Text = "You are up to date.";
+                SetUpdateProgressVisible(false);
             }
         }
         catch
@@ -1478,12 +1739,132 @@ public partial class MainWindow : Window
             if (isManual)
             {
                 UpdateStatusText.Text = "Update check failed. Verify internet or GitHub repo settings.";
+                SetUpdateProgressVisible(false);
             }
         }
         finally
         {
             _isCheckingUpdates = false;
         }
+    }
+
+    private async Task DownloadAndInstallUpdateAsync(string downloadUrl)
+    {
+        _isUpdatingInBackground = true;
+        try
+        {
+            string tempInstallerPath = Path.Combine(Path.GetTempPath(), $"SnapForgeUpdate_{DateTime.Now:yyyyMMdd_HHmmss}.exe");
+            UpdateStatusText.Text = "Downloading update...";
+            SetUpdateProgressVisible(true);
+            SetUpdateProgress(2, "Starting download");
+
+            using HttpResponseMessage response = await _httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead);
+            response.EnsureSuccessStatusCode();
+            long? totalBytes = response.Content.Headers.ContentLength;
+
+            await using Stream source = await response.Content.ReadAsStreamAsync();
+            await using FileStream target = new(tempInstallerPath, FileMode.Create, FileAccess.Write, FileShare.None);
+            byte[] buffer = new byte[81920];
+            long readTotal = 0;
+            int read;
+            while ((read = await source.ReadAsync(buffer)) > 0)
+            {
+                await target.WriteAsync(buffer.AsMemory(0, read));
+                readTotal += read;
+                if (totalBytes.HasValue && totalBytes.Value > 0)
+                {
+                    double percent = (double)readTotal / totalBytes.Value;
+                    double mapped = 5 + (percent * 70);
+                    SetUpdateProgress(mapped, $"Downloading {Math.Round(percent * 100)}%");
+                }
+            }
+
+            SetUpdateProgress(78, "Download complete");
+            UpdateStatusText.Text = "Installing update in silent mode...";
+            StartSilentUpdateAndRestart(tempInstallerPath);
+        }
+        catch
+        {
+            UpdateStatusText.Text = "Automatic update failed. Use 'Open update download'.";
+            SetUpdateProgress(0, "Update failed");
+            SetUpdateProgressVisible(false);
+            _isUpdatingInBackground = false;
+        }
+    }
+
+    private void StartSilentUpdateAndRestart(string installerPath)
+    {
+        try
+        {
+            string currentExe = Process.GetCurrentProcess().MainModule?.FileName
+                                ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SnapForge.exe");
+            string args = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /SP-";
+            string command = $"/c start \"\" /wait \"{installerPath}\" {args} && timeout /t 1 /nobreak >nul && start \"\" \"{currentExe}\"";
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = command,
+                WindowStyle = ProcessWindowStyle.Hidden,
+                CreateNoWindow = true,
+                UseShellExecute = false
+            });
+
+            SetUpdateProgress(100, "Installing and restarting...");
+            _allowClose = true;
+            Close();
+        }
+        catch
+        {
+            UpdateStatusText.Text = "Could not start silent installer.";
+            SetUpdateProgress(0, "Install start failed");
+            SetUpdateProgressVisible(false);
+            _isUpdatingInBackground = false;
+        }
+    }
+
+    private void SetUpdateProgress(double value, string text)
+    {
+        double clamped = Math.Clamp(value, 0, 100);
+        UpdateProgressBar.Value = clamped;
+        UpdateProgressText.Text = $"Progress: {Math.Round(clamped)}% - {text}";
+    }
+
+    private void SetUpdateProgressVisible(bool visible)
+    {
+        UpdateProgressBar.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        UpdateProgressText.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private static string? TryGetInstallerDownloadUrl(JsonElement root)
+    {
+        if (!root.TryGetProperty("assets", out JsonElement assets) || assets.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        string? fallbackExe = null;
+        foreach (JsonElement asset in assets.EnumerateArray())
+        {
+            string name = asset.TryGetProperty("name", out JsonElement nameEl) ? (nameEl.GetString() ?? string.Empty) : string.Empty;
+            string url = asset.TryGetProperty("browser_download_url", out JsonElement urlEl) ? (urlEl.GetString() ?? string.Empty) : string.Empty;
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                continue;
+            }
+
+            if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                if (name.Contains("installer", StringComparison.OrdinalIgnoreCase))
+                {
+                    return url;
+                }
+
+                fallbackExe = url;
+            }
+        }
+
+        return fallbackExe;
     }
 
     private void NotificationDurationSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -1563,27 +1944,53 @@ public partial class MainWindow : Window
 
     private void ShowOverlayHub()
     {
-        List<ScreenshotItem> items = _galleryItems
-            .OrderByDescending(x => File.GetCreationTime(x.FilePath))
-            .Select(x => new ScreenshotItem
+        RefreshGalleryItems();
+        List<ScreenshotItem> items = [];
+        foreach (GalleryItemView item in _galleryItems
+                     .Where(x => File.Exists(x.FilePath))
+                     .OrderByDescending(x => File.GetCreationTime(x.FilePath)))
+        {
+            try
             {
-                FilePath = x.FilePath,
-                FileName = x.FileName,
-                CreatedAt = File.GetCreationTime(x.FilePath),
-                Thumbnail = CreateThumb(x.FilePath)
-            })
-            .ToList();
+                items.Add(new ScreenshotItem
+                {
+                    FilePath = item.FilePath,
+                    FileName = item.FileName,
+                    CreatedAt = File.GetCreationTime(item.FilePath),
+                    Thumbnail = CreateThumb(item.FilePath)
+                });
+            }
+            catch
+            {
+                // skip broken/locked file thumbnails and continue opening overlay
+            }
+        }
 
         if (_overlayHubWindow is not null)
         {
-            _overlayHubWindow.Close();
+            if (_overlayHubWindow.IsVisible)
+            {
+                _overlayHubWindow.Activate();
+                _overlayHubWindow.Topmost = true;
+                _overlayHubWindow.Topmost = false;
+                return;
+            }
+
             _overlayHubWindow = null;
         }
 
-        _overlayHubWindow = new OverlayHubWindow(items);
-        _overlayHubWindow.Left = SystemParameters.WorkArea.Left + 16;
-        _overlayHubWindow.Top = SystemParameters.WorkArea.Top + ((SystemParameters.WorkArea.Height - _overlayHubWindow.Height) / 2);
-        _overlayHubWindow.Show();
+        try
+        {
+            _overlayHubWindow = new OverlayHubWindow(items);
+            _overlayHubWindow.Left = SystemParameters.WorkArea.Left + 16;
+            _overlayHubWindow.Top = SystemParameters.WorkArea.Top + ((SystemParameters.WorkArea.Height - _overlayHubWindow.Height) / 2);
+            _overlayHubWindow.Closed += (_, _) => _overlayHubWindow = null;
+            _overlayHubWindow.Show();
+        }
+        catch
+        {
+            CaptureResultText.Text = "Overlay open failed.";
+        }
     }
 
     private sealed class GalleryItemView : INotifyPropertyChanged

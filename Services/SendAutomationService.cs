@@ -1,5 +1,7 @@
 using System.Runtime.InteropServices;
 using System.IO;
+using System.Windows.Media.Imaging;
+using System.Windows;
 using Forms = System.Windows.Forms;
 
 namespace SnapForge.Services;
@@ -12,7 +14,11 @@ public sealed class SendAutomationService
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
 
+    [DllImport("user32.dll")]
+    private static extern bool IsIconic(IntPtr hWnd);
+
     private const int SwRestore = 9;
+    private const int SwMaximize = 3;
 
     public bool TrySendImageToWindow(IntPtr handle, string filePath)
     {
@@ -23,14 +29,21 @@ public sealed class SendAutomationService
 
         try
         {
-            ShowWindow(handle, SwRestore);
+            if (IsIconic(handle))
+            {
+                ShowWindow(handle, SwRestore);
+            }
+            ShowWindow(handle, SwMaximize);
             SetForegroundWindow(handle);
-            Forms.Clipboard.SetFileDropList(new System.Collections.Specialized.StringCollection { filePath });
-
-            // Best-effort global paste into the active input/chat box.
+            using FileStream stream = File.Open(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            BitmapImage bitmap = new();
+            bitmap.BeginInit();
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.StreamSource = stream;
+            bitmap.EndInit();
+            bitmap.Freeze();
+            System.Windows.Clipboard.SetImage(bitmap);
             Forms.SendKeys.SendWait("^v");
-            Thread.Sleep(120);
-            Forms.SendKeys.SendWait("{ENTER}");
             return true;
         }
         catch

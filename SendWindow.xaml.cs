@@ -13,6 +13,7 @@ public partial class SendWindow : Window
     {
         InitializeComponent();
         _filePath = filePath;
+        WindowStartupLocation = WindowStartupLocation.CenterScreen;
         LoadWindows();
     }
 
@@ -36,7 +37,16 @@ public partial class SendWindow : Window
 
         bool sent = _sendAutomationService.TrySendImageToWindow(selected.Handle, _filePath);
         StatusText.Text = sent
-            ? $"Send attempted to {selected.ProcessName}."
+            ? $"Sent to {selected.ProcessName}."
             : "Send failed on selected window.";
+        if (sent)
+        {
+            Close();
+        }
+    }
+
+    private void CloseButton_Click(object sender, RoutedEventArgs e)
+    {
+        Close();
     }
 }

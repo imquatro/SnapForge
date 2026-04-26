@@ -3,13 +3,15 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace SnapForge;
 
 public partial class App : System.Windows.Application
 {
-    private const string InstanceMutexName = "SnapForge.SingleInstance.Mutex";
-    private const string ActivateEventName = "SnapForge.SingleInstance.Activate";
+    private static readonly string InstanceMutexName = $"SnapForge.SingleInstance.Mutex.{BuildInstanceSuffix()}";
+    private static readonly string ActivateEventName = $"SnapForge.SingleInstance.Activate.{BuildInstanceSuffix()}";
     private static Mutex? _instanceMutex;
     private EventWaitHandle? _activateEvent;
     private RegisteredWaitHandle? _activateWait;
@@ -138,6 +140,20 @@ public partial class App : System.Windows.Application
         catch
         {
             // keep default behavior if reflection path fails
+        }
+    }
+
+    private static string BuildInstanceSuffix()
+    {
+        try
+        {
+            string key = AppContext.BaseDirectory.Trim().ToLowerInvariant();
+            byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(key));
+            return Convert.ToHexString(hash[..8]);
+        }
+        catch
+        {
+            return "DEFAULT";
         }
     }
 }
