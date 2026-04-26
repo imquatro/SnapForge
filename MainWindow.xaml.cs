@@ -191,8 +191,7 @@ public partial class MainWindow : Window
 
     private Forms.NotifyIcon BuildTrayIcon()
     {
-        string trayIconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", "icons", "app.ico");
-        Drawing.Icon trayResolvedIcon = File.Exists(trayIconPath) ? new Drawing.Icon(trayIconPath) : Drawing.SystemIcons.Application;
+        Drawing.Icon trayResolvedIcon = ResolveExecutableIcon();
         Forms.NotifyIcon tray = new()
         {
             Text = "SnapForge Capture",
@@ -213,17 +212,41 @@ public partial class MainWindow : Window
     {
         try
         {
-            string iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", "icons", "app.ico");
-            if (!File.Exists(iconPath))
+            Drawing.Icon exeIcon = ResolveExecutableIcon();
+            if (exeIcon.Handle == IntPtr.Zero)
             {
                 return;
             }
 
-            Icon = BitmapFrame.Create(new Uri(iconPath, UriKind.Absolute));
+            Icon = Imaging.CreateBitmapSourceFromHIcon(
+                exeIcon.Handle,
+                Int32Rect.Empty,
+                BitmapSizeOptions.FromWidthAndHeight(32, 32));
         }
         catch
         {
         }
+    }
+
+    private static Drawing.Icon ResolveExecutableIcon()
+    {
+        try
+        {
+            string exePath = Process.GetCurrentProcess().MainModule?.FileName ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(exePath) && File.Exists(exePath))
+            {
+                Drawing.Icon? extracted = Drawing.Icon.ExtractAssociatedIcon(exePath);
+                if (extracted is not null)
+                {
+                    return (Drawing.Icon)extracted.Clone();
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        return Drawing.SystemIcons.Application;
     }
 
     private void ShowFromTray()
