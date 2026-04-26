@@ -1,0 +1,11 @@
+SnapForge End User License Agreement
+
+By installing and using this software, you agree to the following:
+
+1. This software is provided "as is" without warranty of any kind.
+2. You may install and use SnapForge for personal or commercial screenshot workflows.
+3. You may not reverse engineer or redistribute modified versions without permission.
+4. The author is not liable for data loss, indirect damages, or business interruption.
+5. Configuration data is stored locally on your system.
+
+If you do not agree to these terms, do not install this software.
