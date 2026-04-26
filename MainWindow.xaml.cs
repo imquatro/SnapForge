@@ -22,8 +22,8 @@ namespace SnapForge;
 
 public partial class MainWindow : Window
 {
-    private const string UpdateRepoOwner = "YOUR_GITHUB_USERNAME";
-    private const string UpdateRepoName = "YOUR_REPO_NAME";
+    private const string UpdateRepoOwner = "imquatro";
+    private const string UpdateRepoName = "SnapForge";
     private const int CaptureHotkeyId = 7000;
     private const int OverlayHotkeyId = 7001;
     private readonly SettingsService _settingsService = new();
