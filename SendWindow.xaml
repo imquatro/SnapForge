@@ -11,44 +11,61 @@
         Width="760"
         Height="560"
         Foreground="#EAF0FF">
-    <Border Background="#0F1520"
-            BorderBrush="#2A3C58"
+    <Border Background="{DynamicResource Sf.SteamCardBackground}"
+            BorderBrush="{DynamicResource Sf.SteamCardBorder}"
             BorderThickness="1"
-            CornerRadius="12"
+            CornerRadius="16"
             Padding="12">
         <Grid>
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <Grid Margin="0,0,0,10">
+            <Grid Margin="0,0,0,8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="Send to open application"
-                           FontSize="18"
-                           FontWeight="SemiBold"
-                           VerticalAlignment="Center" />
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="Send to open application"
+                               FontSize="18"
+                               FontWeight="SemiBold" />
+                    <TextBlock x:Name="FileNameText"
+                               Margin="10,0,0,0"
+                               Foreground="#9EC0F7"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"
+                               MaxWidth="360" />
+                </StackPanel>
                 <Button Grid.Column="1"
-                        Width="30"
-                        Height="24"
+                        Width="32"
+                        Height="28"
                         Content="✕"
+                        Style="{DynamicResource Sf.ImGuiButton}"
                         Click="CloseButton_Click" />
             </Grid>
 
+            <TextBlock Grid.Row="1"
+                       Text="Select a window below, then click Send."
+                       Foreground="#9DB2D4"
+                       Margin="0,0,0,8" />
+
             <ListBox x:Name="WindowsListBox"
-                     Grid.Row="1"
-                     Background="#101826"
-                     BorderBrush="#2A3C58"
-                     BorderThickness="1"
-                     ScrollViewer.VerticalScrollBarVisibility="Hidden"
-                     SelectionMode="Single">
+                     Grid.Row="2"
+                     Style="{DynamicResource Sf.ImGuiListBox}"
+                     ItemContainerStyle="{DynamicResource Sf.ImGuiListBoxItem}"
+                     SelectionMode="Single"
+                     MouseDoubleClick="WindowsListBox_MouseDoubleClick">
                 <ListBox.ItemsPanel>
                     <ItemsPanelTemplate>
-                        <WrapPanel />
+                        <WrapPanel Orientation="Horizontal">
+                            <WrapPanel.Width>
+                                <Binding RelativeSource="{RelativeSource AncestorType=ScrollViewer}" Path="ViewportWidth" />
+                            </WrapPanel.Width>
+                        </WrapPanel>
                     </ItemsPanelTemplate>
                 </ListBox.ItemsPanel>
                 <ListBox.ItemTemplate>
@@ -61,6 +78,20 @@
                                 BorderThickness="1"
                                 CornerRadius="8"
                                 Padding="8">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                            <Setter Property="BorderBrush" Value="#FFD254" />
+                                            <Setter Property="BorderThickness" Value="2" />
+                                            <Setter Property="Background" Value="#1E2D45" />
+                                        </DataTrigger>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="BorderBrush" Value="#5B8CFF" />
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
@@ -85,19 +116,31 @@
                 </ListBox.ItemTemplate>
             </ListBox>
 
-            <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,10,0,0">
+            <Grid Grid.Row="3" Margin="0,10,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
                 <Button Content="Refresh"
                         Width="100"
+                        Height="28"
                         Margin="0,0,10,0"
+                        Style="{DynamicResource Sf.ImGuiButton}"
                         Click="RefreshButton_Click" />
-                <Button Content="Send"
+                <Button Grid.Column="1"
+                        Content="Send"
                         Width="110"
+                        Height="28"
+                        Style="{DynamicResource Sf.ImGuiButton}"
                         Click="SendButton_Click" />
                 <TextBlock x:Name="StatusText"
+                           Grid.Column="2"
                            Margin="14,0,0,0"
                            VerticalAlignment="Center"
-                           Foreground="#9EC0F7" />
-            </StackPanel>
+                           Foreground="#88D8A3"
+                           TextTrimming="CharacterEllipsis" />
+            </Grid>
         </Grid>
     </Border>
 </Window>

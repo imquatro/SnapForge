@@ -70,6 +70,8 @@ public partial class MainWindow : Window
     private IntPtr _keyboardHookHandle = IntPtr.Zero;
     private bool _captureHotkeyPressed;
     private bool _overlayHotkeyPressed;
+    private bool _hotkeysRegisteredSuccessfully;
+    private long _lastCaptureTicks;
 
     [DllImport("user32.dll")]
     private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
@@ -318,6 +320,14 @@ public partial class MainWindow : Window
 
     private void CaptureScreenshot()
     {
+        long now = Environment.TickCount64;
+        if (now - _lastCaptureTicks < 500)
+        {
+            return;
+        }
+
+        _lastCaptureTicks = now;
+
         try
         {
             string filePath = _screenshotService.CaptureTo(_settings.SaveDirectory);
@@ -476,10 +486,12 @@ public partial class MainWindow : Window
         bool overlayOk = RegisterHotKey(_hwndSource.Handle, OverlayHotkeyId, (uint)_settings.OverlayHotkeyModifiers, (uint)_settings.OverlayHotkeyVirtualKey);
         if (!captureOk || !overlayOk)
         {
+            _hotkeysRegisteredSuccessfully = false;
             error = "Hotkey already used by another app or invalid.";
             return false;
         }
 
+        _hotkeysRegisteredSuccessfully = true;
         return true;
     }
 
@@ -562,7 +574,7 @@ public partial class MainWindow : Window
             bool keyUp = msg == WmKeyUp || msg == WmSysKeyUp;
             bool shiftHeld = (GetAsyncKeyState(VkShift) & 0x8000) != 0;
 
-            if (keyDown && shiftHeld)
+            if (keyDown && shiftHeld && !_hotkeysRegisteredSuccessfully)
             {
                 int captureVk = _settings.HotkeyVirtualKey;
                 int overlayVk = _settings.OverlayHotkeyVirtualKey;

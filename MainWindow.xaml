@@ -112,12 +112,15 @@
                         </Grid>
                         <ScrollViewer Grid.Row="1"
                                       Style="{DynamicResource Sf.ImGuiScrollViewer}"
-                                      VerticalScrollBarVisibility="Hidden"
                                       PreviewMouseWheel="GalleryScrollViewer_PreviewMouseWheel">
                             <ItemsControl x:Name="GalleryItemsControl">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
-                                        <WrapPanel />
+                                        <WrapPanel Orientation="Horizontal">
+                                            <WrapPanel.Width>
+                                                <Binding RelativeSource="{RelativeSource AncestorType=ScrollViewer}" Path="ViewportWidth" />
+                                            </WrapPanel.Width>
+                                        </WrapPanel>
                                     </ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
@@ -395,7 +398,7 @@
                 </TabItem>
 
                 <TabItem Header="Settings">
-                    <ScrollViewer VerticalScrollBarVisibility="Hidden" Style="{DynamicResource Sf.ImGuiScrollViewer}">
+                    <ScrollViewer Style="{DynamicResource Sf.ImGuiScrollViewer}">
                         <StackPanel Margin="10">
                             <TextBlock Text="Save folder" Margin="0,0,0,4" />
                             <TextBox x:Name="SaveDirectoryTextBox" IsReadOnly="True" Margin="0,0,0,8" Style="{DynamicResource Sf.ImGuiTextBox}" />

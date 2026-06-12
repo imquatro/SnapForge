@@ -1,4 +1,6 @@
+using System.IO;
 using System.Windows;
+using System.Windows.Input;
 using SnapForge.Services;
 
 namespace SnapForge;
@@ -13,6 +15,7 @@ public partial class SendWindow : Window
     {
         InitializeComponent();
         _filePath = filePath;
+        FileNameText.Text = Path.GetFileName(filePath);
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         LoadWindows();
     }
@@ -48,5 +51,10 @@ public partial class SendWindow : Window
     private void CloseButton_Click(object sender, RoutedEventArgs e)
     {
         Close();
+    }
+
+    private void WindowsListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        SendButton_Click(sender, e);
     }
 }
