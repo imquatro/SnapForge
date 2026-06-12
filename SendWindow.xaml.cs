@@ -23,6 +23,38 @@ public partial class SendWindow : Window
     private void LoadWindows()
     {
         WindowsListBox.ItemsSource = _windowDiscoveryService.GetOpenWindows();
+        UpdateSelectionPreview(null);
+    }
+
+    private void HeaderBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == MouseButton.Left)
+        {
+            DragMove();
+        }
+    }
+
+    private void WindowsListBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        UpdateSelectionPreview(WindowsListBox.SelectedItem as WindowDiscoveryService.OpenWindowInfo);
+    }
+
+    private void UpdateSelectionPreview(WindowDiscoveryService.OpenWindowInfo? selected)
+    {
+        bool hasSelection = selected is not null;
+        SelectedPreviewBorder.Visibility = hasSelection ? Visibility.Visible : Visibility.Collapsed;
+        SendButton.IsEnabled = hasSelection;
+
+        if (!hasSelection || selected is null)
+        {
+            StatusText.Text = string.Empty;
+            return;
+        }
+
+        SelectedPreviewIcon.Source = selected.IconSource;
+        SelectedPreviewProcess.Text = selected.ProcessName;
+        SelectedPreviewTitle.Text = selected.Title;
+        StatusText.Text = "Target selected.";
     }
 
     private void RefreshButton_Click(object sender, RoutedEventArgs e)
@@ -55,6 +87,11 @@ public partial class SendWindow : Window
 
     private void WindowsListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
+        if (WindowsListBox.SelectedItem is null)
+        {
+            return;
+        }
+
         SendButton_Click(sender, e);
     }
 }

@@ -9,8 +9,26 @@
         Topmost="True"
         Title="Send Screenshot"
         Width="820"
-        Height="620"
+        Height="640"
         Foreground="#EAF0FF">
+    <Window.Resources>
+        <Style x:Key="SendTileListBoxItem" TargetType="ListBoxItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <ContentPresenter />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
     <Border Background="{DynamicResource Sf.SteamCardBackground}"
             BorderBrush="{DynamicResource Sf.SteamCardBorder}"
             BorderThickness="1"
@@ -20,44 +38,123 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <Grid Margin="0,0,0,10">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <StackPanel>
-                    <TextBlock Text="Send to open application"
-                               FontSize="18"
-                               FontWeight="SemiBold" />
-                    <TextBlock x:Name="FileNameText"
-                               Margin="0,4,0,0"
-                               FontSize="12"
-                               Foreground="#7FA8D8"
-                               TextTrimming="CharacterEllipsis" />
-                </StackPanel>
-                <Button Grid.Column="1"
-                        Width="32"
-                        Height="28"
-                        Content="✕"
-                        Style="{DynamicResource Sf.ImGuiButton}"
-                        Click="CloseButton_Click" />
-            </Grid>
+            <Border Grid.Row="0"
+                    Background="#182033"
+                    BorderBrush="#2A3C58"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Padding="10,8"
+                    Margin="0,0,0,10"
+                    Cursor="SizeAll"
+                    MouseLeftButtonDown="HeaderBar_MouseLeftButtonDown">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Send to open application"
+                                       FontSize="18"
+                                       FontWeight="SemiBold" />
+                            <TextBlock Text="  •  drag to move"
+                                       FontSize="11"
+                                       Foreground="#7FA8D8"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                        <TextBlock x:Name="FileNameText"
+                                   Margin="0,4,0,0"
+                                   FontSize="12"
+                                   Foreground="#9EC0F7"
+                                   TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                    <Button Grid.Column="1"
+                            Width="32"
+                            Height="28"
+                            Content="✕"
+                            Style="{DynamicResource Sf.ImGuiButton}"
+                            Click="CloseButton_Click" />
+                </Grid>
+            </Border>
 
             <TextBlock Grid.Row="1"
-                       Text="Pick a window, then press Send."
+                       Text="Click a window tile to select it, then press Send."
                        FontSize="12"
                        Foreground="#9DB2D4"
-                       Margin="0,0,0,10" />
+                       Margin="0,0,0,8" />
+
+            <Border x:Name="SelectedPreviewBorder"
+                    Grid.Row="2"
+                    Visibility="Collapsed"
+                    Background="#121C2B"
+                    BorderBrush="#FFD254"
+                    BorderThickness="2"
+                    CornerRadius="12"
+                    Padding="12,10"
+                    Margin="0,0,0,10">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Border Width="56"
+                            Height="56"
+                            Background="#0E1522"
+                            BorderBrush="#FFD254"
+                            BorderThickness="2"
+                            CornerRadius="12"
+                            Margin="0,0,12,0">
+                        <Image x:Name="SelectedPreviewIcon"
+                               Width="40"
+                               Height="40"
+                               Stretch="Uniform"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               RenderOptions.BitmapScalingMode="HighQuality" />
+                    </Border>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="Selected target"
+                                   FontSize="10"
+                                   Foreground="#FFD254"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,4" />
+                        <TextBlock x:Name="SelectedPreviewProcess"
+                                   FontSize="15"
+                                   FontWeight="SemiBold"
+                                   TextTrimming="CharacterEllipsis" />
+                        <TextBlock x:Name="SelectedPreviewTitle"
+                                   Margin="0,3,0,0"
+                                   FontSize="12"
+                                   Foreground="#9EC0F7"
+                                   TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                    <Border Grid.Column="2"
+                            VerticalAlignment="Center"
+                            Background="#2A3F22"
+                            BorderBrush="#88D8A3"
+                            BorderThickness="1"
+                            CornerRadius="14"
+                            Padding="10,4">
+                        <TextBlock Text="Ready"
+                                   Foreground="#88D8A3"
+                                   FontSize="11"
+                                   FontWeight="SemiBold" />
+                    </Border>
+                </Grid>
+            </Border>
 
             <ListBox x:Name="WindowsListBox"
-                     Grid.Row="2"
+                     Grid.Row="3"
                      Style="{DynamicResource Sf.ImGuiListBox}"
-                     ItemContainerStyle="{DynamicResource Sf.ImGuiListBoxItem}"
+                     ItemContainerStyle="{StaticResource SendTileListBoxItem}"
                      SelectionMode="Single"
+                     SelectionChanged="WindowsListBox_SelectionChanged"
                      MouseDoubleClick="WindowsListBox_MouseDoubleClick">
                 <ListBox.ItemsPanel>
                     <ItemsPanelTemplate>
@@ -77,19 +174,35 @@
                                 BorderBrush="#2A3C58"
                                 BorderThickness="1"
                                 CornerRadius="12"
-                                Padding="10,12,10,10">
+                                Padding="10,12,10,10"
+                                Cursor="Hand">
                             <Border.Style>
                                 <Style TargetType="Border">
+                                    <Setter Property="BorderBrush" Value="#2A3C58" />
+                                    <Setter Property="BorderThickness" Value="1" />
+                                    <Setter Property="Background" Value="#141E2E" />
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
                                             <Setter Property="BorderBrush" Value="#FFD254" />
-                                            <Setter Property="BorderThickness" Value="2" />
-                                            <Setter Property="Background" Value="#1A2940" />
+                                            <Setter Property="BorderThickness" Value="3" />
+                                            <Setter Property="Background" Value="#1E3350" />
+                                            <Setter Property="Effect">
+                                                <Setter.Value>
+                                                    <DropShadowEffect Color="#FFD254"
+                                                                      BlurRadius="14"
+                                                                      ShadowDepth="0"
+                                                                      Opacity="0.45" />
+                                                </Setter.Value>
+                                            </Setter>
                                         </DataTrigger>
-                                        <Trigger Property="IsMouseOver" Value="True">
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="False" />
+                                                <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True" />
+                                            </MultiDataTrigger.Conditions>
                                             <Setter Property="BorderBrush" Value="#5B8CFF" />
                                             <Setter Property="Background" Value="#182536" />
-                                        </Trigger>
+                                        </MultiDataTrigger>
                                     </Style.Triggers>
                                 </Style>
                             </Border.Style>
@@ -134,13 +247,41 @@
                                            TextTrimming="CharacterEllipsis"
                                            MaxHeight="34"
                                            MaxWidth="158" />
+                                <Border HorizontalAlignment="Right"
+                                        VerticalAlignment="Top"
+                                        Margin="0,-4,-4,0"
+                                        Width="24"
+                                        Height="24"
+                                        Background="#FFD254"
+                                        BorderBrush="#FFF2B0"
+                                        BorderThickness="1"
+                                        CornerRadius="12"
+                                        Visibility="Collapsed">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <TextBlock Text="✓"
+                                               Foreground="#1A1200"
+                                               FontWeight="Bold"
+                                               FontSize="13"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
+                                               Margin="0,-1,0,0" />
+                                </Border>
                             </Grid>
                         </Border>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>
 
-            <Grid Grid.Row="3" Margin="0,12,0,0">
+            <Grid Grid.Row="4" Margin="0,12,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
@@ -152,10 +293,12 @@
                         Margin="0,0,10,0"
                         Style="{DynamicResource Sf.ImGuiButton}"
                         Click="RefreshButton_Click" />
-                <Button Grid.Column="1"
+                <Button x:Name="SendButton"
+                        Grid.Column="1"
                         Content="Send"
                         Width="110"
                         Height="28"
+                        IsEnabled="False"
                         Style="{DynamicResource Sf.ImGuiButton}"
                         Click="SendButton_Click" />
                 <TextBlock x:Name="StatusText"
