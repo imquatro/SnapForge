@@ -102,7 +102,7 @@ public sealed class WindowDiscoveryService
             BitmapSource source = Imaging.CreateBitmapSourceFromHIcon(
                 hIcon,
                 System.Windows.Int32Rect.Empty,
-                BitmapSizeOptions.FromWidthAndHeight(32, 32));
+                BitmapSizeOptions.FromWidthAndHeight(64, 64));
             source.Freeze();
             _ = DestroyIcon(hIcon);
             return source;
@@ -120,10 +120,10 @@ public sealed class WindowDiscoveryService
         dc.DrawRoundedRectangle(
             new SolidColorBrush(System.Windows.Media.Color.FromRgb(45, 64, 96)),
             null,
-            new System.Windows.Rect(0, 0, 32, 32),
-            6,
-            6);
-        RenderTargetBitmap bmp = new(32, 32, 96, 96, PixelFormats.Pbgra32);
+            new System.Windows.Rect(0, 0, 64, 64),
+            10,
+            10);
+        RenderTargetBitmap bmp = new(64, 64, 96, 96, PixelFormats.Pbgra32);
         bmp.Render(visual);
         bmp.Freeze();
         return bmp;
